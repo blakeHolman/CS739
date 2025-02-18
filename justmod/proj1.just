@@ -6,58 +6,186 @@ default:
 
 # install extra dependencies of your KV code
 deps:
-    # FIXME: your dependency installation commands here
+    echo "Installing Go and Protobuf..." ; \
+    sudo apt update && sudo apt install -y golang-go protobuf-compiler ; \
+    sudo ln -sf /usr/lib/go/bin/go /usr/bin/go ; \
+    go install google.golang.org/protobuf/cmd/protoc-gen-go@latest ; \
+    go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@latest ; \
+    export PATH=$PATH:$(go env GOPATH)/bin ; \
+
 
 # build your executables in release mode
 build:
-    # FIXME: your build commands here (don't include clean)
+    if [ ! -f go.mod ]; then \
+        echo "Initializing Go modules..." ; \
+        go mod init madkv ; \
+        go mod tidy ; \
+    fi ; \
+    export PATH=$PATH:$(go env GOPATH)/bin ; \
+    mkdir -p kvstore ; \
+    protoc --go_out=.. --go-grpc_out=.. --proto_path=src --experimental_allow_proto3_optional src/kvstore.proto ; \
+    go mod tidy ; \
+    go build -o server src/server.go ; \
+    go build -o client src/client.go
 
 # clean the build of your executables
 clean:
     # FIXME: your clean commands here
+    rm -f server client src/kvstore.pb.go src/kvstore_grpc.pb.go
 
 # run your KV store server
 server listen="0.0.0.0:3777":
-    # FIXME: your server run command here, listening on addr for new clients
+    ./server "{{listen}}"
 
 # run you KV store client in stdin/out interface mode
 client server="127.0.0.1:3777":
-    # FIXME: your client run command here, connecting to server at addr
+    ./client "{{server}}"
 
 # run your KV store testcase 1 client
 test1 server="127.0.0.1:3777":
-    # FIXME: your testcase 1 client run command here
-    #        for testcases, feel free to reuse 'just p1::client' if you
-    #        designed your clients this way, or invoke different executables
+    # Test 1 checks to ensure basic commands work for single client
+    sh -c 'printf "PUT name Alice\n\
+    GET name\n\
+    SWAP name Bob\n\
+    GET name\n\
+    DELETE name\n\
+    SCAN a z\n\
+    STOP\n" | ./client "{{server}}"'
 
 # run your KV store testcase 2 client
 test2 server="127.0.0.1:3777":
-    # FIXME: your testcase 2 client run command here
+    # Tests multiple commands from single client, ensures keys are not found
+    sh -c 'printf "DELETE name\n\
+    GET name\n\
+    SWAP name Ted\n\
+    PUT name Jim\n\
+    DELETE name\n\
+    PUT name Bob\n\
+    GET name\n\
+    DELETE name\n\
+    GET name\n\
+    DELETE name\n\
+    SCAN A Z\n\
+    PUT name Bill\n\
+    PUT address 1234\n\
+    PUT car Aston\n\
+    PUT name James\n\
+    GET name\n\
+    GET car\n\
+    SWAP name Bond\n\
+    GET name\n\
+    SCAN a z\n\
+    STOP\n" | ./client "{{server}}"'
 
 # run your KV store testcase 3 client
 test3 server="127.0.0.1:3777":
-    # FIXME: your testcase 3 client run command here
+    # Test 3 tests if multiple clients can issue non-conflicting requests
+    { sh -c '( \
+        printf "PUT key1 Value1\n" ;\
+    	sleep 0.2; \
+    	printf "GET key1\n" ; \
+    	sleep 0.2; \
+    	printf "PUT key2 Value2\n" ; \
+    	sleep 0.2; \
+    	printf "GET key2\n" ; \
+    	sleep 0.2; \
+    	printf "SCAN a z\n" ; \
+    	sleep 0.2; \
+    	printf "STOP\n" \
+    ) | ./client "{{server}}"'; } &
+
+    { sh -c '( \
+    	printf "\nPUT keyA DataA\n" ; \
+    	sleep 0.2 ; \
+    	printf "GET keyA\n" ; \
+    	sleep 0.2 ; \
+    	printf "PUT keyB DataB\n" ; \
+    	sleep 0.2 ; \
+    	printf "GET keyB\n" ; \
+    	sleep 0.2 ; \
+    	printf "SCAN a z\n" ; \
+    	sleep 0.2 ; \
+    	printf "STOP\n" \
+    ) | ./client "{{server}}"'; } & 
+
+    wait
+
+    sleep 1
+    exit 0
 
 # run your KV store testcase 4 client(s)
 test4 server="127.0.0.1:3777":
-    # FIXME: your testcase 4 client(s) run commands here
-    #        for multi-client testcases, this recipe should run multiple
-    #        concurrent client processes; you may write an additional runner
-    #        utility or a scripting layer to manage multiple processes
+    # Test4: This test shows conflicting requests from 2 clients
+    # It shows a phantom read in SCAN due to its read lock
+    { sh -c '( \
+        printf "PUT shared_key c1_A\n"; \
+        sleep 0.1; \
+        printf "GET shared_key\n"; \
+        sleep 0.1; \
+        printf "SWAP shared_key C1_B\n"; \
+        sleep 0.1; \
+        printf "STOP\n" \
+    ) | ./client "{{server}}"'; } &
+    { sh -c '( \
+        printf "PUT shared_key C2_X\n"; \
+        sleep 0.1; \
+        printf "GET shared_key\n"; \
+        sleep 0.1; \
+        printf "SCAN a z"; \
+        sleep 0.3 ; \
+        printf "DELETE shared_key\n"; \
+        sleep 0.1; \
+        printf "STOP\n" \
+    ) | ./client "{{server}}"'; } &
+    wait
+    sleep 1
+    exit 0
 
 # run your KV store testcase 5 client(s)
 test5 server="127.0.0.1:3777":
     # FIXME: your testcase 5 client(s) run commands here
+    { sh -c '( \
+        printf "PUT key1 C1_1\n"; \
+        sleep 0.3; \
+        printf "GET key2\n"; \
+        sleep 0.3; \
+        printf "SWAP key1 C1_2\n"; \
+        sleep 0.3; \
+        printf "GET key3\n"; \
+        sleep 0.3; \
+        printf "DELETE key2\n"; \
+        sleep 0.3; \
+        printf "SCAN a z\n"; \
+        sleep 0.3; \
+        printf "STOP\n" \
+    ) | ./client "{{server}}"'; } &
+
+    { sh -c '( \
+        printf "PUT key2 C2_X\n"; \
+        sleep 0.3; \
+        printf "GET key1\n"; \
+        sleep 0.3; \
+        printf "SWAP key3 C2_Y\n"; \
+        sleep 0.3; \
+        printf "GET key2\n"; \
+        sleep 0.3; \
+        printf "DELETE key3\n"; \
+        sleep 0.3; \
+        printf "SCAN a z\n"; \
+        sleep 0.3; \
+        printf "STOP\n" \
+    ) | ./client "{{server}}"'; } &
+
+    wait
+    sleep 3
+    exit 0
 
 # kill all processes of your KV store system
 kill:
-    # FIXME: your kill commands here
-    #        make sure that it kills all server, clients, and any extra helper
-    #        processes of your system; redirecting both out & err to /dev/null
-    #        is recommended
-    #   TIP: commands such as 'pkill' may return non-zero exit code on success,
-    #        which would by default abort the 'just' recipe early; prepend the
-    #        command with a '-' sign to ignore its exit code
+    # Kills server and client
+    -pkill -f "./server" &> /dev/null
+    -pkill -f "./client" &> /dev/null
+    sleep 1
 
 # NOTE: feel free to add more recipes as you see fit...
 #       also feel free to add extra parameters to the recipes as you see fit,

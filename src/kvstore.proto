@@ -1,0 +1,58 @@
+syntax = "proto3";
+
+package kvstore;
+
+
+option go_package = "madkv/kvstore";
+
+service KeyValueStore {
+    rpc Put (PutRequest) returns (PutResponse);
+    rpc Swap (SwapRequest) returns (SwapResponse);
+    rpc Get (GetRequest) returns (GetResponse);
+    rpc Scan (ScanRequest) returns (ScanResponse);
+    rpc Delete (DeleteRequest) returns (DeleteResponse);
+}
+
+message PutRequest {
+    string key = 1;
+    string value = 2;
+}
+
+message PutResponse {
+    bool found = 1;
+}
+
+message SwapRequest {
+    string key = 1;
+    string new_value = 2;
+}
+
+message SwapResponse {
+    optional string old_value = 1;
+}
+
+message GetRequest {
+    string key = 1;
+}
+
+message GetResponse {
+    optional string value = 1;
+}
+
+message ScanRequest {
+    string start_key = 1;
+    string end_key = 2;
+}
+
+message ScanResponse {
+    repeated string keys = 1;
+    repeated string values = 2;
+}
+
+message DeleteRequest {
+    string key = 1;
+}
+
+message DeleteResponse {
+    bool found = 1;
+}
