@@ -27,4 +27,4 @@ target/
 .DS_Store
 
 # Project-specific
-ycsb
+ycsb/
