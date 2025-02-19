@@ -35,7 +35,7 @@ clean:
 
 # run your KV store server
 server listen="0.0.0.0:3777":
-    ./server "{{listen}}"
+    ./server --listen "{{listen}}"
 
 # run you KV store client in stdin/out interface mode
 client server="127.0.0.1:3777":
