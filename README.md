@@ -59,7 +59,7 @@ Next, find the ip address of the server machine using:
 ip a
 ```
 
-***Note: If running both client server on a single machine, this step is not needed. The just functions default to 0.0.0.0 and loopback address.***
+*Note: If running both client server on a single machine, this step is not needed. The just functions default to 0.0.0.0 and loopback address.*
 
 Then, the server can be started using the command:
 ```
@@ -79,7 +79,7 @@ To run the client, first ensure the server is running. Then, run the below comma
 just p1::client <server ip>
 ```
 
-***Note: If no server IP is provided, it will default to 127.0.0.1 ***
+*Note: If no server IP is provided, it will default to 127.0.0.1 *
 
 ## Testing
 
@@ -111,7 +111,7 @@ Test 5 focuses on write-write conflicts. It can be run using the command:
 just p1::test5 <server ip>
 ```
 
-***Note: To log the outputs of the tests, you can run the provided function below. This will create a log in the /tmp/madkv-p1/tests/ directory.***
+*Note: To log the outputs of the tests, you can run the provided function below. This will create a log in the /tmp/madkv-p1/tests/ directory.*
 
 ```
 just testcase <num> <server ip>
