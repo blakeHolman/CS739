@@ -88,9 +88,22 @@ func (s *KeyValueStoreServer) replayLog() error {
 				return err
 			}
 			delete(s.store, req.Key)
+		case "SWAP":
+			var req pb.SwapRequest
+			if err := proto.Unmarshal(serializedData, &req); err != nil {
+				return err
+			}
 
-			// Add SCAN, SWAP, and GET
+			_, found := s.store[req.Key]
+			if found {
+				s.store[req.Key] = req.NewValue
+			}
 		}
+	}
+
+	// Catch any errors during iteration
+	if err := rows.Err(); err != nil {
+		return err
 	}
 
 	return nil
