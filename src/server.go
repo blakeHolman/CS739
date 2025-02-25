@@ -2,11 +2,15 @@ package main
 
 import (
 	"context"
+	"database/sql"
+	"flag"
 	"fmt"
 	"log"
 	"net"
 	"sync"
-	"flag"
+
+	//_ "github.com/mattn/go-sqlite3"
+	"google.golang.org/protobuf/proto"
 
 	pb "madkv/kvstore" // Import generated Go package
 
@@ -17,12 +21,91 @@ type KeyValueStoreServer struct {
 	pb.UnimplementedKeyValueStoreServer
 	mu    sync.RWMutex
 	store map[string]string
+	db    *sql.DB
+}
+
+// Initialize DB
+func initDB(path string) (*sql.DB, error) {
+	db, err := sql.Open("sqlite3", path)
+	if err != nil {
+		return nil, err
+	}
+
+	createTable := `
+	CREATE TABLE IF NOT EXISTS command_log (
+		id INTEGER PRIMARY KEY AUTOINCREMENT,
+		sommand_type TEXT NOT NULL,
+		serialized_data BLOB NOT NULL,
+		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
+	);
+	`
+
+	_, err = db.Exec(createTable)
+	if err != nil {
+		return nil, err
+	}
+
+	return db, nil
+
+}
+
+// Logging Function
+func (s *KeyValueStoreServer) logCommand(commandType string, msg proto.Message) error {
+	data, err := proto.Marshal(msg)
+	if err != nil {
+		return err
+	}
+
+	_, err = s.db.Exec("INSERT INTO command_log (command_type, serialized_data) VALUES (?, ?)", commandType, data)
+	return err
+}
+
+// Replay log during startup ###### UNFINISHED ######
+func (s *KeyValueStoreServer) replayLog() error {
+	rows, err := s.db.Query("SELECT command_type, serialized_data FROM command_log ORDER BY id ASC")
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+
+	for rows.Next() {
+		var commandType string
+		var serializedData []byte
+		if err := rows.Scan(&commandType, &serializedData); err != nil {
+			return err
+		}
+
+		switch commandType {
+		case "PUT":
+			var req pb.PutRequest
+			if err := proto.Unmarshal(serializedData, &req); err != nil {
+				return err
+			}
+			s.store[req.Key] = req.Value
+		case "DELETE":
+			var req pb.DeleteRequest
+			if err := proto.Unmarshal(serializedData, &req); err != nil {
+				return err
+			}
+			delete(s.store, req.Key)
+
+			// Add SCAN, SWAP, and GET
+		}
+	}
+
+	return nil
 }
 
 // PUT: Insert or update a key-value pair
 func (s *KeyValueStoreServer) Put(ctx context.Context, req *pb.PutRequest) (*pb.PutResponse, error) {
 	s.mu.Lock() // Write lock
 	defer s.mu.Unlock()
+
+	// Log the command first
+	err := s.logCommand("PUT", req)
+	if err != nil {
+		return nil, err
+	}
 
 	_, found := s.store[req.Key]
 	s.store[req.Key] = req.Value
@@ -95,7 +178,24 @@ func (s *KeyValueStoreServer) Scan(ctx context.Context, req *pb.ScanRequest) (*p
 	return response, nil
 }
 
-func main() {
+func main() { // Cannot have two func mains in the same package (server.go and client.go)
+
+	db, err := initDB("command_log.db")
+	if err != nil {
+		log.Fatalf("Failed to initialize DB: %v", err)
+	}
+
+	server := grpc.NewServer()
+	kvServer := &KeyValueStoreServer{
+		store: make(map[string]string),
+		db:    db,
+	}
+
+	// Replay the logs
+	if err := kvServer.replayLog(); err != nil {
+		log.Fatalf("Failed to replay logs: %v", err)
+	}
+
 	listenAddr := flag.String("listen", "0.0.0.0:3777", "IP:Port address to listen on")
 	flag.Parse()
 
@@ -104,7 +204,7 @@ func main() {
 		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
 	}
 
-	server := grpc.NewServer()
+	//server := grpc.NewServer()
 	pb.RegisterKeyValueStoreServer(server, &KeyValueStoreServer{store: make(map[string]string)})
 
 	log.Printf("Server listening on %s", *listenAddr)
