@@ -34,7 +34,7 @@ func initDB(path string) (*sql.DB, error) {
 	createTable := `
 	CREATE TABLE IF NOT EXISTS command_log (
 		id INTEGER PRIMARY KEY AUTOINCREMENT,
-		sommand_type TEXT NOT NULL,
+		command_type TEXT NOT NULL,
 		serialized_data BLOB NOT NULL,
 		timestamp DATETIME DEFAULT CURRENT_TIMESTAMP
 	);
@@ -94,8 +94,7 @@ func (s *KeyValueStoreServer) replayLog() error {
 				return err
 			}
 
-			_, found := s.store[req.Key]
-			if found {
+			if _, found := s.store[req.Key]; found {
 				s.store[req.Key] = req.NewValue
 			}
 		}
@@ -149,6 +148,12 @@ func (s *KeyValueStoreServer) Swap(ctx context.Context, req *pb.SwapRequest) (*p
 
 	oldValue, found := s.store[req.Key]
 	s.store[req.Key] = req.NewValue
+
+	err := s.logCommand("SWAP", req)
+	if err != nil {
+		return nil, err
+	}
+
 	if found {
 		fmt.Printf("[SWAP] %s swapped %s -> %s\n", req.Key, oldValue, req.NewValue)
 		return &pb.SwapResponse{OldValue: &oldValue}, nil
@@ -198,7 +203,6 @@ func main() { // Cannot have two func mains in the same package (server.go and c
 		log.Fatalf("Failed to initialize DB: %v", err)
 	}
 
-	server := grpc.NewServer()
 	kvServer := &KeyValueStoreServer{
 		store: make(map[string]string),
 		db:    db,
@@ -217,7 +221,7 @@ func main() { // Cannot have two func mains in the same package (server.go and c
 		log.Fatalf("Failed to listen on %s: %v", *listenAddr, err)
 	}
 
-	//server := grpc.NewServer()
+	server := grpc.NewServer()
 	pb.RegisterKeyValueStoreServer(server, &KeyValueStoreServer{store: make(map[string]string)})
 
 	log.Printf("Server listening on %s", *listenAddr)
