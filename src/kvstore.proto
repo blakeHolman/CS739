@@ -56,3 +56,16 @@ message DeleteRequest {
 message DeleteResponse {
     bool found = 1;
 }
+
+service ClusterManager {
+    rpc RegisterServer(RegisterServerRequest) returns (RegisterServerResponse);
+}
+
+message RegisterServerRequest {
+    int32 server_id = 1;
+    string address = 2;
+}
+
+message RegisterServerResponse {
+    bool success = 1;
+}
